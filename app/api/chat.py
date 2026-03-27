@@ -58,8 +58,12 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(request: Request, body: ChatRequest):
     async def event_stream():
+        # Immediate heartbeat so the browser doesn't timeout
+        yield f"data: {json.dumps({'token': ''})}\n\n"
+        
         if request.app.state.rag is None:
             from app.rag.pipeline import RAGPipeline
+            log.info("chat.init_rag_lazy")
             request.app.state.rag = await RAGPipeline.create()
             
         async for chunk in request.app.state.rag.stream(body.message):
