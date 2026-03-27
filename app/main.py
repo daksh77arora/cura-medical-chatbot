@@ -26,6 +26,15 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
 )
 
+@app.get("/")
+def root():
+    return {
+        "message": "Welcome to the MediBot Pro API v2.0",
+        "status": "Online",
+        "docs": "/docs (if in debug mode)",
+        "health": "/health"
+    }
+
 app.add_middleware(CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
