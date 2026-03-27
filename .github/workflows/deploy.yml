@@ -1,0 +1,38 @@
+name: CI/CD Pipeline
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Run tests
+        run: |
+          pip install -e "."
+          pip install pytest pytest-asyncio pytest-cov
+          pytest tests/ -v --cov=app --cov-report=xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & push ECR
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          aws ecr get-login-password | docker login --username AWS \
+            --password-stdin $ECR_REGISTRY
+          docker build -t medibot:${{ github.sha }} .
+          docker push $ECR_REGISTRY/medibot:${{ github.sha }}
+      - name: Deploy to ECS
+        run: echo "aws ecs update-service --force-new-deployment"

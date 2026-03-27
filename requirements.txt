@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+langchain
+langchain-openai
+langchain-community
+langchain-pinecone
+langchain-cohere
+langchain-core
+pydantic-settings
+pypdf
+python-dotenv
+sentence-transformers
+bleach
+slowapi
+structlog
+redis
+rank-bm25

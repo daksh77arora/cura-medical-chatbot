@@ -1,0 +1,109 @@
+from flask import Flask, render_template, jsonify, request
+from src.helper import download_hugging_face_embeddings
+from langchain_pinecone import PineconeVectorStore
+from langchain_openai import ChatOpenAI
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+from dotenv import load_dotenv
+from src.prompt import *
+import os
+import bleach
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from src.safety import MedicalSafetyFilter
+import logging
+
+app = Flask(__name__)
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+load_dotenv()
+
+PINECONE_API_KEY=os.environ.get('PINECONE_API_KEY')
+OPENAI_API_KEY=os.environ.get('OPENAI_API_KEY')
+
+os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+
+
+embeddings = download_hugging_face_embeddings()
+
+index_name = "medical-chatbot" 
+# Embed each chunk and upsert the embeddings into your Pinecone index.
+docsearch = PineconeVectorStore.from_existing_index(
+    index_name=index_name,
+    embedding=embeddings
+)
+
+
+
+
+retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
+
+chatModel = ChatOpenAI(model="gpt-4o")
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system_prompt),
+        ("human", "{input}"),
+    ]
+)
+
+question_answer_chain = create_stuff_documents_chain(chatModel, prompt)
+rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+
+
+
+@app.route("/")
+def index():
+    return render_template('chat.html')
+
+
+
+@app.route("/get", methods=["GET", "POST"])
+@limiter.limit("20 per minute")
+def chat():
+    try:
+        raw_msg = request.form["msg"]
+        
+        # 1. Sanitization
+        clean_msg = bleach.clean(raw_msg.strip())
+        if not clean_msg:
+            return "Please provide a valid message."
+            
+        logger.info(f"Received query of length: {len(clean_msg)}")
+
+        # 2. Safety filter for emergencies
+        if MedicalSafetyFilter.is_emergency(clean_msg):
+            return "⚠️ <br> <strong>Emergency Detected.</strong> <br> Please call emergency services (like 911 or 112) or go to your nearest emergency room immediately."
+
+        # 3. Scope filter
+        is_in_scope, out_of_scope_msg = MedicalSafetyFilter.check_scope(clean_msg)
+        if not is_in_scope:
+            return out_of_scope_msg
+
+        # 4. RAG invocation
+        response = rag_chain.invoke({"input": clean_msg})
+        answer = str(response["answer"])
+
+        # 5. Add disclaimer
+        disclaimer = "<br><br><hr><small><em>⚕️ For educational purposes only. Not a substitute for professional medical advice, diagnosis, or treatment. Always consult a qualified physician.</em></small>"
+        
+        return answer + disclaimer
+
+    except Exception as e:
+        logger.error(f"Error processing chat request: {str(e)}")
+        # Never leak stack traces
+        return "Sorry, I encountered an error while processing your request. Please try again later."
+
+
+if __name__ == '__main__':
+    # debug=True removed for production safety
+    app.run(host="0.0.0.0", port=8080, debug=False)

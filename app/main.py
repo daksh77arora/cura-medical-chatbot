@@ -1,0 +1,36 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from app.api.chat import router as chat_router
+from app.api.health import router as health_router
+from app.core.config import settings
+from app.core.logging import setup_logging
+from app.core.exceptions import global_exception_handler
+from app.rag.pipeline import RAGPipeline
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: initialize everything once
+    setup_logging()
+    app.state.rag = await RAGPipeline.create()
+    yield
+    # Shutdown: clean up connections
+    await app.state.rag.cleanup()
+
+app = FastAPI(
+    title="MediBot API",
+    version="2.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.DEBUG else None,
+)
+
+app.add_middleware(CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+app.add_exception_handler(Exception, global_exception_handler)
+
+app.include_router(chat_router, prefix="/api/v1")
+app.include_router(health_router)

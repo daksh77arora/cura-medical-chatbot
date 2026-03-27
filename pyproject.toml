@@ -1,0 +1,29 @@
+[project]
+name = "medibot"
+version = "2.0.0"
+description = "Industry-Level Medical Chatbot"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+    "structlog",
+    "slowapi",
+    "bleach",
+    "redis",
+    "langchain==0.3.26",
+    "langchain-pinecone==0.2.8",
+    "langchain-openai==0.3.24",
+    "langchain-community==0.3.26",
+    "sentence-transformers==4.1.0",
+    "python-dotenv==1.1.0",
+    "boto3",
+    "langchain-experimental",
+    "langchain-cohere",
+    "rank_bm25"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
