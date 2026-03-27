@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     # API Keys — SecretStr prevents accidental logging
-    OPENAI_API_KEY: SecretStr
+    OPENAI_API_KEY: SecretStr | None = None
     PINECONE_API_KEY: SecretStr
     COHERE_API_KEY: SecretStr | None = None
 
