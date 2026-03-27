@@ -10,12 +10,13 @@ from app.rag.pipeline import RAGPipeline
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialize everything once
+    # Startup: basic initialization
     setup_logging()
-    app.state.rag = await RAGPipeline.create()
+    app.state.rag = None # Initialize as None, will lazy-load
     yield
-    # Shutdown: clean up connections
-    await app.state.rag.cleanup()
+    # Shutdown: clean up if initialized
+    if app.state.rag:
+        await app.state.rag.cleanup()
 
 app = FastAPI(
     title="MediBot API",

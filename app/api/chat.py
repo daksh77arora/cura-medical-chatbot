@@ -35,6 +35,12 @@ async def chat(
         )
 
     try:
+        # Lazy initialization
+        if request.app.state.rag is None:
+            log.info("chat.init_rag")
+            from app.rag.pipeline import RAGPipeline
+            request.app.state.rag = await RAGPipeline.create()
+            
         rag = request.app.state.rag
         result = await rag.invoke(
             message=body.message,
@@ -52,6 +58,10 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(request: Request, body: ChatRequest):
     async def event_stream():
+        if request.app.state.rag is None:
+            from app.rag.pipeline import RAGPipeline
+            request.app.state.rag = await RAGPipeline.create()
+            
         async for chunk in request.app.state.rag.stream(body.message):
             yield f"data: {json.dumps({'token': chunk})}\n\n"
         yield "data: [DONE]\n\n"
