@@ -12,9 +12,10 @@ export const useChat = () => {
     // Initial bot message for streaming tokens
     setMessages(prev => [...prev, { role: 'bot', content: '', sources: null }]);
 
+    const baseUrl = import.meta.env.VITE_API_URL || '';
     try {
       // Setup the event source for SSE token streaming
-      const response = await fetch('/api/v1/chat/stream', {
+      const response = await fetch(`${baseUrl}/api/v1/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg })
