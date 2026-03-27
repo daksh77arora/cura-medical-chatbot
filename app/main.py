@@ -6,7 +6,8 @@ from app.api.health import router as health_router
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.exceptions import global_exception_handler
-from app.rag.pipeline import RAGPipeline
+# Heavy import deferred to lazy loading
+# from app.rag.pipeline import RAGPipeline
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

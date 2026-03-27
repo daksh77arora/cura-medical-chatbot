@@ -1,20 +1,20 @@
 from typing import Dict, AsyncGenerator
-from langchain_cohere import ChatCohere
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 from app.core.config import settings
-from src.helper import download_hugging_face_embeddings
-from src.prompt import system_prompt
-from app.rag.pinecone_store import PineconeV8VectorStore
-
 
 def _format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-
 class RAGPipeline:
     def __init__(self):
+        # Heavy imports moved inside to prevent startup blockage
+        from langchain_cohere import ChatCohere
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+        from src.helper import download_hugging_face_embeddings
+        from src.prompt import system_prompt
+        from app.rag.pinecone_store import PineconeV8VectorStore
+        
         self.embeddings = download_hugging_face_embeddings()
         self.vectorstore = PineconeV8VectorStore.from_existing_index(
             index_name=settings.PINECONE_INDEX,
