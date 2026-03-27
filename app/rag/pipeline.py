@@ -1,4 +1,5 @@
-from typing import Dict, AsyncGenerator
+from typing import Dict, AsyncGenerator, List
+from langchain_core.documents import Document
 from app.core.config import settings
 
 def _format_docs(docs):
@@ -6,16 +7,20 @@ def _format_docs(docs):
 
 class RAGPipeline:
     def __init__(self):
-        # Heavy imports moved inside to prevent startup blockage
-        from langchain_cohere import ChatCohere
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+        self.embeddings = None
+        self.vectorstore = None
+        self.retriever = None
+        self.chat_model = None
+        self.chain = None
+        self.retrieval_chain = None
+
+    async def initialize(self, progress_callback=None):
+        if progress_callback: await progress_callback("📥 Downloading AI Embeddings (80MB)...")
         from src.helper import download_hugging_face_embeddings
-        from src.prompt import system_prompt
-        from app.rag.pinecone_store import PineconeV8VectorStore
-        
         self.embeddings = download_hugging_face_embeddings()
+
+        if progress_callback: await progress_callback("🔍 Connecting to Pinecone Vector Index...")
+        from app.rag.pinecone_store import PineconeV8VectorStore
         self.vectorstore = PineconeV8VectorStore.from_existing_index(
             index_name=settings.PINECONE_INDEX,
             embedding=self.embeddings,
@@ -24,6 +29,13 @@ class RAGPipeline:
 
         from app.rag.retriever import build_retriever
         self.retriever = build_retriever(self.vectorstore)
+
+        if progress_callback: await progress_callback("🤖 Initializing Cohere LLM...")
+        from langchain_cohere import ChatCohere
+        from src.prompt import system_prompt
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 
         self.chat_model = ChatCohere(
             model="command-r-plus-08-2024",
@@ -48,12 +60,18 @@ class RAGPipeline:
         self.retrieval_chain = RunnableParallel(
             {"context": self.retriever, "input": RunnablePassthrough()}
         )
+        
+        if progress_callback: await progress_callback("✅ AI Ready! Generating answer...")
 
     @classmethod
     async def create(cls):
-        return cls()
+        instance = cls()
+        return instance
 
     async def invoke(self, message: str, session_id: str) -> Dict:
+        if not self.chain:
+            await self.initialize()
+            
         retrieval_result = await self.retrieval_chain.ainvoke(message)
         docs = retrieval_result["context"]
         answer = await self.chain.ainvoke(message)
@@ -72,6 +90,9 @@ class RAGPipeline:
         return {"answer": answer, "sources": sources}
 
     async def stream(self, message: str) -> AsyncGenerator[str, None]:
+        if not self.chain:
+            await self.initialize()
+            
         async for chunk in self.chain.astream(message):
             if chunk:
                 yield chunk

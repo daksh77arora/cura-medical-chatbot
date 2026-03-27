@@ -17,7 +17,7 @@ async def chat(
 ):
     log.info("chat.request", session_id=session_id, length=len(body.message))
 
-    # Safety check before hitting the LLM
+    # Safety check
     if MedicalSafetyFilter.is_emergency(body.message):
         return ChatResponse(
             answer="⚠️ This sounds like a medical emergency. Please call 112 or go to your nearest emergency room immediately.",
@@ -35,17 +35,12 @@ async def chat(
         )
 
     try:
-        # Lazy initialization
         if request.app.state.rag is None:
-            log.info("chat.init_rag")
             from app.rag.pipeline import RAGPipeline
             request.app.state.rag = await RAGPipeline.create()
             
         rag = request.app.state.rag
-        result = await rag.invoke(
-            message=body.message,
-            session_id=session_id,
-        )
+        result = await rag.invoke(message=body.message, session_id=session_id)
         return ChatResponse(
             answer=result["answer"],
             sources=result["sources"],
@@ -58,17 +53,42 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(request: Request, body: ChatRequest):
     async def event_stream():
-        # Immediate heartbeat with feedback
-        yield f"data: {json.dumps({'token': '🔄 Initializing MediBot (First-time load)...'})}\n\n"
-        
         if request.app.state.rag is None:
             from app.rag.pipeline import RAGPipeline
-            log.info("chat.init_rag_lazy")
             request.app.state.rag = await RAGPipeline.create()
         
-        yield f"data: {json.dumps({'token': '\n✅ AI Online. Retrieval started...\n\n'})}\n\n"
+        rag = request.app.state.rag
+        
+        # If not initialized, do it now with progress updates
+        if rag.chain is None:
+            async def report(msg):
+                return f"data: {json.dumps({'token': f'\\n{msg}'})}\\n\\n"
             
-        async for chunk in request.app.state.rag.stream(body.message):
+            # Since we can't easily yield from inside initialize without a generator,
+            # we'll just do it manually here for the first-time setup
+            yield f"data: {json.dumps({'token': '🔄 Initializing MediBot Brain...' })}\n\n"
+            
+            # Step 1: Embeddings
+            from src.helper import download_hugging_face_embeddings
+            yield f"data: {json.dumps({'token': '\n📥 Loading AI Embeddings...' })}\n\n"
+            rag.embeddings = download_hugging_face_embeddings()
+            
+            # Step 2: Vector Store
+            yield f"data: {json.dumps({'token': '\n🔍 Connecting to Vector Store...' })}\n\n"
+            from app.rag.pinecone_store import PineconeV8VectorStore
+            from app.core.config import settings
+            rag.vectorstore = PineconeV8VectorStore.from_existing_index(
+                index_name=settings.PINECONE_INDEX,
+                embedding=rag.embeddings,
+                api_key=settings.PINECONE_API_KEY.get_secret_value(),
+            )
+            
+            # Step 3: Chain
+            yield f"data: {json.dumps({'token': '\n🤖 Ready! Generating answer...\n\n' })}\n\n"
+            await rag.initialize() # Finishes the rest quietly
+        
+        async for chunk in rag.stream(body.message):
             yield f"data: {json.dumps({'token': chunk})}\n\n"
         yield "data: [DONE]\n\n"
+
     return StreamingResponse(event_stream(), media_type="text/event-stream")
